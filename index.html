@@ -1,0 +1,1237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Parkour Aranha</title>
+    <!-- Tailwind CSS for UI -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Three.js for 3D graphics -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- GLTFLoader para carregar modelos 3D externos do Three.js -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <!-- FontAwesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            user-select: none;
+            -webkit-user-select: none;
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background-color: #05050a;
+            color: #fff;
+        }
+
+        #canvas-container {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+
+        /* Glassmorphism Styling */
+        .glass {
+            background: rgba(13, 17, 23, 0.65);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+        }
+
+        .neon-border-cyan {
+            box-shadow: 0 0 15px rgba(0, 243, 255, 0.4), inset 0 0 15px rgba(0, 243, 255, 0.2);
+            border: 1px solid rgba(0, 243, 255, 0.6);
+        }
+
+        .neon-text-cyan {
+            text-shadow: 0 0 8px rgba(0, 243, 255, 0.8);
+        }
+
+        .neon-text-pink {
+            text-shadow: 0 0 8px rgba(255, 0, 127, 0.8);
+        }
+
+        /* Custom Touch Controls Styling */
+        .touch-btn {
+            background: rgba(255, 255, 255, 0.1);
+            border: 2px solid rgba(255, 255, 255, 0.25);
+            backdrop-filter: blur(4px);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 1.25rem;
+            touch-action: manipulation;
+        }
+
+        .touch-btn:active {
+            background: rgba(0, 243, 255, 0.4);
+            transform: scale(0.95);
+        }
+
+        /* Speed blur FX */
+        #speed-lines {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            z-index: 2;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+            background: radial-gradient(circle, transparent 60%, rgba(0, 243, 255, 0.15) 100%);
+        }
+
+        /* Crosshair */
+        .crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 8px;
+            height: 8px;
+            transform: translate(-50%, -50%);
+            border-radius: 50%;
+            background: rgba(0, 243, 255, 0.6);
+            pointer-events: none;
+            z-index: 3;
+            box-shadow: 0 0 8px cyan;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 3D Canvas -->
+    <div id="canvas-container"></div>
+
+    <!-- Speed Effect Overlay -->
+    <div id="speed-lines"></div>
+
+    <!-- Reticle/Crosshair -->
+    <div class="crosshair"></div>
+
+    <!-- UI Overlay (HUD) -->
+    <div id="hud" class="absolute inset-0 z-10 pointer-events-none p-4 flex flex-col justify-between">
+        <!-- Top Bar: Stats & Minimap -->
+        <div class="flex justify-between items-start w-full">
+            <!-- Left Info Panel -->
+            <div class="glass p-4 rounded-xl flex flex-col gap-2 min-w-[200px]">
+                <div class="flex justify-between items-center">
+                    <span class="text-xs uppercase tracking-widest text-cyan-400 font-bold">Level</span>
+                    <span id="level-val" class="font-bold text-lg text-white">1</span>
+                </div>
+                <div class="flex justify-between items-center">
+                    <span class="text-xs uppercase tracking-widest text-gray-400">Score</span>
+                    <span id="score-val" class="font-bold text-xl text-yellow-400 neon-text-pink">0</span>
+                </div>
+                <div class="flex justify-between items-center">
+                    <span class="text-xs uppercase tracking-widest text-gray-400">Time</span>
+                    <span id="timer-val" class="font-mono text-lg text-cyan-300">00:00.0</span>
+                </div>
+                <div class="flex justify-between items-center">
+                    <span class="text-xs uppercase tracking-widest text-gray-400">Gems</span>
+                    <span id="gems-val" class="font-bold text-pink-500">0 / 0</span>
+                </div>
+            </div>
+
+            <!-- Middle Combo Display -->
+            <div id="combo-box" class="glass px-6 py-2 rounded-full text-center opacity-0 transition-opacity duration-300">
+                <span id="combo-text" class="text-2xl font-black italic text-transparent bg-clip-text bg-gradient-to-r from-pink-500 to-cyan-400">
+                    WALL RUN x2
+                </span>
+            </div>
+
+            <!-- Right Minimap -->
+            <div class="glass p-2 rounded-xl flex flex-col items-center">
+                <canvas id="minimap" width="100" height="100" class="rounded-lg border border-cyan-500/30 bg-black/50"></canvas>
+                <span class="text-[10px] text-cyan-400 font-mono mt-1">RADAR 360</span>
+            </div>
+        </div>
+
+        <!-- Center Notification Message -->
+        <div id="message-banner" class="self-center transform -translate-y-12 opacity-0 transition-all duration-500 text-center">
+            <h2 id="message-text" class="text-3xl font-extrabold tracking-wider text-cyan-400 neon-text-cyan uppercase">
+                CHECKPOINT REACHED
+            </h2>
+        </div>
+
+        <!-- Bottom Bar: Stamina, Speed, Controls info -->
+        <div class="flex justify-between items-end w-full">
+            <!-- Left Controls Guide (Desktop) -->
+            <div class="hidden sm:flex glass p-3 rounded-lg text-xs text-gray-300 gap-4">
+                <div><kbd class="px-1.5 py-0.5 bg-white/10 rounded border border-white/20">WASD</kbd> Move</div>
+                <div><kbd class="px-1.5 py-0.5 bg-white/10 rounded border border-white/20">SPACE</kbd> Jump x2</div>
+                <div><kbd class="px-1.5 py-0.5 bg-white/10 rounded border border-white/20">SHIFT</kbd> Sprint/Wallrun</div>
+                <div><kbd class="px-1.5 py-0.5 bg-white/10 rounded border border-white/20">C</kbd> Slide</div>
+                <div><kbd class="px-1.5 py-0.5 bg-white/10 rounded border border-white/20">MOUSE</kbd> 360 View</div>
+            </div>
+
+            <!-- Center Gauge: Stamina & Speed meter -->
+            <div class="glass p-4 rounded-xl flex flex-col gap-2 w-full max-w-md mx-auto sm:mx-0">
+                <div class="flex justify-between items-center text-xs text-gray-300">
+                    <span class="font-semibold text-cyan-400">STAMINA</span>
+                    <span id="speed-val" class="font-mono text-yellow-300">0 KM/H</span>
+                </div>
+                <!-- Stamina Bar -->
+                <div class="w-full bg-gray-800 h-2.5 rounded-full overflow-hidden border border-white/10">
+                    <div id="stamina-bar" class="bg-gradient-to-r from-cyan-500 to-pink-500 h-full w-full transition-all duration-75"></div>
+                </div>
+            </div>
+
+            <!-- Action Pause Button -->
+            <button id="pause-btn" class="pointer-events-auto glass w-12 h-12 rounded-xl flex items-center justify-center text-xl hover:bg-white/20 transition-all">
+                <i class="fa-solid fa-pause"></i>
+            </button>
+        </div>
+    </div>
+
+    <!-- Mobile On-Screen Touch Controls Overlay -->
+    <div id="touch-controls" class="absolute inset-0 z-20 pointer-events-none hidden flex-col justify-between p-4">
+        <div class="flex-1"></div>
+        <!-- Bottom Controls Row -->
+        <div class="flex justify-between items-end w-full pb-6">
+            <!-- Virtual Joystick Zone (Left) -->
+            <div id="joystick-zone" class="w-36 h-36 rounded-full glass border border-white/20 pointer-events-auto relative flex items-center justify-center">
+                <div id="joystick-knob" class="w-14 h-14 rounded-full bg-cyan-400/50 border border-cyan-300 absolute transition-transform duration-75"></div>
+            </div>
+
+            <!-- Action Buttons (Right) -->
+            <div class="grid grid-cols-2 gap-3 pointer-events-auto">
+                <button id="btn-web" class="touch-btn w-16 h-16 bg-cyan-600/50 text-xl">
+                    <i class="fa-solid fa-spider"></i>
+                </button>
+                <button id="btn-slide" class="touch-btn w-16 h-16 bg-blue-600/40">
+                    <i class="fa-solid fa-person-dots-from-line"></i>
+                </button>
+                <button id="btn-sprint" class="touch-btn w-16 h-16 col-span-2 bg-yellow-600/40 text-sm">
+                    <i class="fa-solid fa-bolt"></i> SPRINT
+                </button>
+                <button id="btn-jump" class="touch-btn w-20 h-20 col-span-2 bg-pink-600/50 text-2xl font-bold">
+                    JUMP
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Start / Game Over / Victory Modal Screen -->
+    <div id="modal-screen" class="absolute inset-0 z-30 flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
+        <div class="glass max-w-md w-full rounded-2xl p-6 text-center border border-cyan-500/30 flex flex-col items-center gap-5">
+            <h1 id="modal-title" class="text-4xl font-black italic tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-pink-500 neon-text-cyan">
+                PARKOUR ARANHA
+            </h1>
+            <p id="modal-desc" class="text-sm text-gray-300 leading-relaxed">
+                Domine o parkour 360°! Corra, dê saltos duplos, mortais, balance na teia e deslize pelas plataformas para alcançar o portal cibernético!
+            </p>
+            <div class="hidden sm:flex glass p-3 rounded-lg text-xs text-gray-300 gap-4">
+                <div><kbd class="px-1.5 py-0.5 bg-white/10 rounded border border-white/20">WASD</kbd> Mover</div>
+                <div><kbd class="px-1.5 py-0.5 bg-white/10 rounded border border-white/20">ESPAÇO</kbd> Pulo x2</div>
+                <div><kbd class="px-1.5 py-0.5 bg-white/10 rounded border border-white/20">E</kbd> Soltar Teia</div>
+                <div><kbd class="px-1.5 py-0.5 bg-white/10 rounded border border-white/20">SHIFT</kbd> Correr</div>
+                <div><kbd class="px-1.5 py-0.5 bg-white/10 rounded border border-white/20">MOUSE</kbd> Visão 360</div>
+            </div>
+
+            <!-- Stats Summary (Shown when level completed) -->
+            <div id="stats-summary" class="hidden grid grid-cols-3 gap-2 w-full glass p-3 rounded-xl text-center">
+                <div>
+                    <div class="text-xs text-gray-400">TIME</div>
+                    <div id="summary-time" class="font-bold text-cyan-400 font-mono">00:00.0</div>
+                </div>
+                <div>
+                    <div class="text-xs text-gray-400">SCORE</div>
+                    <div id="summary-score" class="font-bold text-yellow-400">0</div>
+                </div>
+                <div>
+                    <div class="text-xs text-gray-400">GEMS</div>
+                    <div id="summary-gems" class="font-bold text-pink-400">0/0</div>
+                </div>
+            </div>
+
+            <!-- Difficulty Selector & Audio/Sens Options -->
+            <div class="w-full text-left space-y-3 glass p-3 rounded-lg">
+                <div class="flex justify-between items-center text-xs">
+                    <span class="text-gray-300 font-bold">Dificuldade</span>
+                    <select id="diff-select" class="bg-black/60 border border-cyan-500/50 text-cyan-300 rounded px-2 py-1 text-xs font-semibold cursor-pointer">
+                        <option value="easy">Fácil</option>
+                        <option value="medium" selected>Médio</option>
+                        <option value="hard">Difícil</option>
+                    </select>
+                </div>
+                <div class="flex justify-between items-center text-xs">
+                    <span class="text-gray-300 font-bold">Nível Direto (1 a 100)</span>
+                    <input type="number" id="level-input" min="1" max="100" value="1" class="w-16 bg-black/60 border border-cyan-500/50 text-cyan-300 rounded px-2 py-1 text-center font-bold text-xs">
+                </div>
+                <div class="flex justify-between items-center text-xs">
+                    <span class="text-gray-300">Efeitos de Som (SFX)</span>
+                    <input type="checkbox" id="sfx-toggle" checked class="accent-cyan-400 w-4 h-4 cursor-pointer">
+                </div>
+                <div class="flex justify-between items-center text-xs">
+                    <span class="text-gray-300">Sensibilidade da Câmera</span>
+                    <input type="range" id="sens-slider" min="1" max="10" value="5" class="w-28 accent-pink-500">
+                </div>
+            </div>
+
+            <button id="start-btn" class="w-full py-3.5 rounded-xl font-bold text-lg bg-gradient-to-r from-cyan-500 to-pink-500 hover:from-cyan-400 hover:to-pink-400 text-black shadow-lg shadow-cyan-500/30 transition-all transform hover:scale-105 active:scale-95">
+                START RUN
+            </button>
+        </div>
+    </div>
+
+    <!-- MAIN GAME LOGIC SCRIPT -->
+    <script>
+        /**
+         * 3D CYBERPUNK PARKOUR 360 - THREE.JS GAME ENGINE
+         */
+
+        // --- AUDIO SYNTHESIZER (Web Audio API) ---
+        class SoundFX {
+            constructor() {
+                this.ctx = null;
+                this.enabled = true;
+            }
+
+            init() {
+                if (!this.ctx) {
+                    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+            }
+
+            playJump() {
+                if (!this.enabled || !this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(150, this.ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(400, this.ctx.currentTime + 0.15);
+                gain.gain.setValueAtTime(0.3, this.ctx.currentTime);
+                gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + 0.15);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.15);
+            }
+
+            playGem() {
+                if (!this.enabled || !this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(523.25, this.ctx.currentTime); // C5
+                osc.frequency.setValueAtTime(659.25, this.ctx.currentTime + 0.08); // E5
+                osc.frequency.setValueAtTime(783.99, this.ctx.currentTime + 0.16); // G5
+                gain.gain.setValueAtTime(0.25, this.ctx.currentTime);
+                gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + 0.3);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.3);
+            }
+
+            playBoost() {
+                if (!this.enabled || !this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(200, this.ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(800, this.ctx.currentTime + 0.3);
+                gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
+                gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + 0.3);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.3);
+            }
+
+            playCheckpoint() {
+                if (!this.enabled || !this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(300, this.ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(600, this.ctx.currentTime + 0.4);
+                gain.gain.setValueAtTime(0.3, this.ctx.currentTime);
+                gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + 0.4);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.4);
+            }
+
+            playFall() {
+                if (!this.enabled || !this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(300, this.ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(60, this.ctx.currentTime + 0.5);
+                gain.gain.setValueAtTime(0.3, this.ctx.currentTime);
+                gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + 0.5);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.5);
+            }
+
+            playWin() {
+                if (!this.enabled || !this.ctx) return;
+                const notes = [440, 554.37, 659.25, 880];
+                notes.forEach((freq, idx) => {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = 'triangle';
+                    osc.frequency.value = freq;
+                    gain.gain.setValueAtTime(0.2, this.ctx.currentTime + idx * 0.1);
+                    gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + idx * 0.1 + 0.3);
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start(this.ctx.currentTime + idx * 0.1);
+                    osc.stop(this.ctx.currentTime + idx * 0.1 + 0.3);
+                });
+            }
+
+            playWeb() {
+                if (!this.enabled || !this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(800, this.ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(1800, this.ctx.currentTime + 0.12);
+                gain.gain.setValueAtTime(0.3, this.ctx.currentTime);
+                gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + 0.15);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.15);
+            }
+        }
+
+        const sound = new SoundFX();
+
+        // --- GAME ENGINE GLOBAL VARS ---
+        let scene, camera, renderer;
+        let playerMesh, playerBody;
+        let clock = new THREE.Clock();
+        
+        // Animation Mixer & Actions
+        let mixer = null;
+        let animationsMap = new Map();
+        let currentAction = '';
+
+        // Web Swing Variables
+        let isWebSwinging = false;
+        let webAnchor = null;
+        let webLineMesh = null;
+        let particles = [];
+        let ambientDust = [];
+
+        // Game State
+        let isPlaying = false;
+        let isPaused = false;
+        let currentLevel = 1;
+        let selectedDifficulty = 'medium'; // 'easy', 'medium', 'hard'
+        let score = 0;
+        let gemsCollected = 0;
+        let totalGemsInLevel = 0;
+        let elapsedTime = 0;
+        let sensitivity = 0.003;
+        
+        // --- PROCEDURAL LEVEL GENERATION (NÍVEIS 1 A 100 + DIFICULDADES) ---
+        function buildLevel(levelNum) {
+            // Trava entre os níveis 1 e 100
+            currentLevel = Math.max(1, Math.min(100, levelNum));
+
+            // Clean up existing objects
+            platforms.forEach(p => scene.remove(p));
+            wallRunSurfaces.forEach(w => scene.remove(w));
+            gems.forEach(g => scene.remove(g));
+            speedPads.forEach(sp => scene.remove(sp));
+            movingPlatforms.forEach(mp => scene.remove(mp.mesh));
+            checkpoints.forEach(cp => scene.remove(cp.mesh));
+            if (portalMesh) scene.remove(portalMesh);
+
+            platforms = [];
+            wallRunSurfaces = [];
+            gems = [];
+            speedPads = [];
+            movingPlatforms = [];
+            checkpoints = [];
+
+            gemsCollected = 0;
+            totalGemsInLevel = 0;
+
+            // Materials
+            const platformMat = new THREE.MeshStandardMaterial({ color: 0x1a1a2e, roughness: 0.3, metalness: 0.5 });
+            const edgeMat = new THREE.MeshBasicMaterial({ color: 0x00f3ff });
+            const pinkEdgeMat = new THREE.MeshBasicMaterial({ color: 0xff007f });
+            const wallMat = new THREE.MeshStandardMaterial({ color: 0x0a0a18, roughness: 0.1, metalness: 0.8 });
+            const wallGlowMat = new THREE.MeshBasicMaterial({ color: 0xff007f, wireframe: true });
+
+            // Starting Platform (Large Circular Hub)
+            const startPlatform = createCylinderPlatform(0, 0, 0, 10, 2, platformMat, edgeMat);
+            lastCheckpointPos.set(0, 1, 0);
+            playerMesh.position.copy(lastCheckpointPos);
+            playerVelocity.set(0, 0, 0);
+
+            // Escala de Dificuldade (Fácil, Médio, Difícil)
+            let diffMult = 1.0;
+            let gapBase = 6.0;
+            let platSizeBase = 4.5;
+            let speedMult = 1.0;
+
+            if (selectedDifficulty === 'easy') {
+                diffMult = 0.8;
+                gapBase = 5.2;
+                platSizeBase = 5.5;
+                speedMult = 0.7;
+            } else if (selectedDifficulty === 'hard') {
+                diffMult = 1.35;
+                gapBase = 7.5;
+                platSizeBase = 3.2;
+                speedMult = 1.5;
+            }
+
+            // NOVO MAPA DE PARKOUR: SKY CITADEL NEBULAR
+            const levelProgress = (currentLevel - 1) / 99; // 0.0 a 1.0
+            const numSegments = 12 + Math.floor(currentLevel * 0.45);
+            const dynamicGap = gapBase + (levelProgress * 2.2 * diffMult);
+
+            let currentPos = new THREE.Vector3(0, 0, -6);
+
+            // Torres decorativas no horizonte do novo mapa
+            for (let t = 0; t < 6; t++) {
+                const towerGeo = new THREE.BoxGeometry(6, 40 + Math.random() * 30, 6);
+                const towerMat = new THREE.MeshStandardMaterial({ color: 0x070914, roughness: 0.2, metalness: 0.8 });
+                const tower = new THREE.Mesh(towerGeo, towerMat);
+                tower.position.set((Math.random() - 0.5) * 120, -10, -20 - Math.random() * 200);
+                scene.add(tower);
+                platforms.push(tower); // Apenas visual decorativo no horizonte
+            }
+
+            for (let i = 0; i < numSegments; i++) {
+                const heightOffset = (Math.sin(i * 0.7) * 1.8) + (Math.random() - 0.2) * (1.2 + levelProgress * 1.2);
+                const angleOffset = (Math.sin(i * 0.5) * 0.6);
+
+                const stepDir = new THREE.Vector3(Math.sin(angleOffset), heightOffset / dynamicGap, -Math.cos(angleOffset)).normalize();
+                currentPos.add(stepDir.multiplyScalar(dynamicGap));
+
+                const segType = Math.random();
+
+                if (segType < 0.25) {
+                    // Novo Tipo 1: Plataformas de Disco Circulares Flutuantes
+                    const radius = Math.max(1.8, platSizeBase - levelProgress * 1.0);
+                    createCylinderPlatform(currentPos.x, currentPos.y, currentPos.z, radius, 1.2, platformMat, edgeMat);
+                    
+                    if (Math.random() > 0.3) {
+                        createGem(currentPos.x, currentPos.y + 1.8, currentPos.z);
+                    }
+                } else if (segType < 0.50) {
+                    // Novo Tipo 2: Plataformas Triangulares / Hexagonais
+                    const width = Math.max(2.2, platSizeBase - levelProgress * 1.2);
+                    createBoxPlatform(currentPos.x, currentPos.y, currentPos.z, width, 1.2, width, platformMat, pinkEdgeMat);
+
+                    if (Math.random() > 0.4) {
+                        createGem(currentPos.x, currentPos.y + 1.8, currentPos.z);
+                    }
+                } else if (segType < 0.75) {
+                    // Novo Tipo 3: Plataforma Móvel Oscilante Vertical/Horizontal
+                    const width = Math.max(2.0, platSizeBase - 0.8);
+                    const plat = createBoxPlatform(currentPos.x, currentPos.y, currentPos.z, width, 1.0, width, platformMat, edgeMat);
+                    movingPlatforms.push({
+                        mesh: plat,
+                        startPos: currentPos.clone(),
+                        axis: i % 2 === 0 ? 'x' : 'y',
+                        distance: (3.0 + Math.random() * 2.5) * diffMult,
+                        speed: (1.2 + Math.random() * 0.8 + levelProgress * 0.9) * speedMult,
+                        timeOffset: Math.random() * Math.PI * 2
+                    });
+                } else if (segType < 0.90) {
+                    // Novo Tipo 4: Wall Run em Trilhos Duplos de Luz Cyan
+                    const side = (i % 2 === 0) ? 1 : -1;
+                    const wallX = currentPos.x + side * 2.8;
+                    const wallGeo = new THREE.BoxGeometry(0.3, 7, 12);
+                    const wallMesh = new THREE.Mesh(wallGeo, wallMat);
+                    wallMesh.position.set(wallX, currentPos.y + 2.5, currentPos.z);
+                    wallMesh.castShadow = true;
+                    wallMesh.receiveShadow = true;
+
+                    const wallGlow = new THREE.Mesh(new THREE.BoxGeometry(0.35, 7.1, 12.1), wallGlowMat);
+                    wallMesh.add(wallGlow);
+
+                    scene.add(wallMesh);
+                    wallRunSurfaces.push(wallMesh);
+
+                    currentPos.z -= dynamicGap;
+                    createBoxPlatform(currentPos.x, currentPos.y, currentPos.z, platSizeBase, 1.2, platSizeBase, platformMat, edgeMat);
+                } else {
+                    // Novo Tipo 5: Trampolins de Salto Gravitacional (Super Jump Pads)
+                    const plat = createBoxPlatform(currentPos.x, currentPos.y, currentPos.z, 3.5, 1.2, 3.5, platformMat, pinkEdgeMat);
+                    const padGeo = new THREE.CylinderGeometry(1.2, 1.2, 0.2, 16);
+                    const padMat = new THREE.MeshBasicMaterial({ color: 0xff007f });
+                    const pad = new THREE.Mesh(padGeo, padMat);
+                    pad.position.set(currentPos.x, currentPos.y + 0.7, currentPos.z);
+                    scene.add(pad);
+                    speedPads.push(pad);
+                }
+
+                // Checkpoints estratégicos
+                if (i > 0 && i % Math.floor(numSegments / 3) === 0) {
+                    createCheckpoint(currentPos.x, currentPos.y + 0.75, currentPos.z);
+                }
+            }
+
+            // Portal Final do Nível
+            currentPos.z -= 8;
+            createCylinderPlatform(currentPos.x, currentPos.y, currentPos.z, 8, 2, platformMat, pinkEdgeMat);
+            
+            const portalGeo = new THREE.TorusGeometry(3, 0.3, 16, 32);
+            const portalMat = new THREE.MeshBasicMaterial({ color: 0xff007f });
+            portalMesh = new THREE.Mesh(portalGeo, portalMat);
+            portalMesh.position.set(currentPos.x, currentPos.y + 3.75, currentPos.z);
+            scene.add(portalMesh);
+
+            // Atualização da Interface HUD
+            totalGemsInLevel = gems.length;
+            gemsValText.innerText = `${gemsCollected} / ${totalGemsInLevel}`;
+            levelValText.innerText = `${currentLevel} / 100`;
+        }
+
+        // --- THREE.JS INITIALIZATION ---
+        function initEngine() {
+            const container = document.getElementById('canvas-container');
+
+            // Scene setup
+            scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(0x05050a, 0.012);
+
+            // Camera setup
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+
+            // High-Fidelity 4K Renderer Setup
+            renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // 4K high pixel-density scaling
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap; // Ultra Soft High-Res Shadows
+            
+            // Ultra 4K Post-Processing Tone Mapping & Color Management
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 1.2;
+            renderer.outputEncoding = THREE.sRGBEncoding;
+
+            container.appendChild(renderer.domElement);
+
+            // Ambient & Directional Dynamic Lights
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(ambientLight);
+
+            const dirLight = new THREE.DirectionalLight(0x00f3ff, 1.8);
+            dirLight.position.set(25, 50, 25);
+            dirLight.castShadow = true;
+            // 4K Shadow Map Resolution
+            dirLight.shadow.mapSize.width = 2048;
+            dirLight.shadow.mapSize.height = 2048;
+            dirLight.shadow.camera.near = 0.5;
+            dirLight.shadow.camera.far = 150;
+            dirLight.shadow.bias = -0.0001;
+            scene.add(dirLight);
+
+            const pointLight = new THREE.PointLight(0xff007f, 2.5, 60);
+            pointLight.position.set(0, 12, 0);
+            scene.add(pointLight);
+
+            // Create Atmospheric 4K Glow Particles
+            create4KParticleDust();
+
+            // Player Pivot Mesh Container
+            playerMesh = new THREE.Group();
+            scene.add(playerMesh);
+
+            // Load 3D Character Model (Soldier.glb) from Three.js repository
+            const loader = new THREE.GLTFLoader();
+            loader.load(
+                'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/models/gltf/Soldier.glb',
+                function (gltf) {
+                    const loadedModel = gltf.scene;
+                    loadedModel.traverse((child) => {
+                        if (child.isMesh) {
+                            child.castShadow = true;
+                            child.receiveShadow = true;
+                        }
+                    });
+
+                    // Zero offsets for soldier model
+                    loadedModel.position.set(0, 0, 0);
+                    loadedModel.scale.set(1.3, 1.3, 1.3);
+
+                    // Add to Player Container
+                    playerMesh.add(loadedModel);
+
+                    // Setup Animation Mixer
+                    mixer = new THREE.AnimationMixer(loadedModel);
+                    if (gltf.animations && gltf.animations.length > 0) {
+                        gltf.animations.forEach((clip) => {
+                            const action = mixer.clipAction(clip);
+                            animationsMap.set(clip.name.toLowerCase(), action);
+                        });
+
+                        // Start with Idle
+                        setAction('idle');
+                    }
+                },
+                undefined,
+                function (error) {
+                    console.error('Error loading 3D Soldier model:', error);
+                    // Fallback visual box if network fails
+                    const fallbackGeo = new THREE.BoxGeometry(0.8, 1.8, 0.8);
+                    const fallbackMat = new THREE.MeshStandardMaterial({ color: 0x00f3ff });
+                    const fallbackMesh = new THREE.Mesh(fallbackGeo, fallbackMat);
+                    fallbackMesh.position.y = 0.9;
+                    playerMesh.add(fallbackMesh);
+                }
+            );
+
+            // Build Initial Level
+            buildLevel(currentLevel);
+
+            // Setup Listeners & Events
+            setupEventListeners();
+
+            // Start Main Animation Loop
+            animate();
+        }
+
+        // --- PLATFORM & ELEMENT HELPERS ---
+        let platforms = [];
+        let wallRunSurfaces = [];
+        let gems = [];
+        let speedPads = [];
+        let movingPlatforms = [];
+        let checkpoints = [];
+        let portalMesh = null;
+        let lastCheckpointPos = new THREE.Vector3(0, 3, 0);
+
+        function create4KParticleDust() {
+            const particleGeo = new THREE.BufferGeometry();
+            const count = 300;
+            const positions = new Float32Array(count * 3);
+            for(let i=0; i < count*3; i+=3) {
+                positions[i] = (Math.random() - 0.5) * 120;
+                positions[i+1] = Math.random() * 40;
+                positions[i+2] = (Math.random() - 0.5) * 300;
+            }
+            particleGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            const particleMat = new THREE.PointsMaterial({
+                color: 0x00f3ff,
+                size: 0.25,
+                transparent: true,
+                opacity: 0.6,
+                blending: THREE.AdditiveBlending
+            });
+            const particleSystem = new THREE.Points(particleGeo, particleMat);
+            scene.add(particleSystem);
+        }
+
+        function createBoxPlatform(x, y, z, w, h, d, mat, edgeMat) {
+            const geo = new THREE.BoxGeometry(w, h, d);
+            
+            // Ultra PBR Material properties for 4K visuals
+            const pbrMat = new THREE.MeshStandardMaterial({
+                color: 0x121424,
+                roughness: 0.15,
+                metalness: 0.85,
+                roughnessMap: null
+            });
+
+            const mesh = new THREE.Mesh(geo, pbrMat);
+            mesh.position.set(x, y, z);
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+
+            const edges = new THREE.EdgesGeometry(geo);
+            const lineMat = new THREE.LineBasicMaterial({ color: edgeMat.color, linewidth: 2 });
+            const line = new THREE.LineSegments(edges, lineMat);
+            mesh.add(line);
+
+            scene.add(mesh);
+            platforms.push(mesh);
+            return mesh;
+        }
+
+        function createCylinderPlatform(x, y, z, radius, h, mat, edgeMat) {
+            const geo = new THREE.CylinderGeometry(radius, radius, h, 32);
+            const pbrMat = new THREE.MeshStandardMaterial({
+                color: 0x121424,
+                roughness: 0.15,
+                metalness: 0.85
+            });
+            const mesh = new THREE.Mesh(geo, pbrMat);
+            mesh.position.set(x, y, z);
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+
+            const edges = new THREE.EdgesGeometry(geo);
+            const lineMat = new THREE.LineBasicMaterial({ color: edgeMat.color, linewidth: 2 });
+            const line = new THREE.LineSegments(edges, lineMat);
+            mesh.add(line);
+
+            scene.add(mesh);
+            platforms.push(mesh);
+            return mesh;
+        }
+
+        function createGem(x, y, z) {
+            const geo = new THREE.OctahedronGeometry(0.5);
+            const mat = new THREE.MeshStandardMaterial({
+                color: 0xff007f,
+                emissive: 0xff007f,
+                emissiveIntensity: 1.2,
+                roughness: 0.05,
+                metalness: 0.9
+            });
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.position.set(x, y, z);
+            scene.add(mesh);
+            gems.push(mesh);
+        }
+
+        function createCheckpoint(x, y, z) {
+            const geo = new THREE.CylinderGeometry(0.8, 0.8, 0.2, 16);
+            const mat = new THREE.MeshBasicMaterial({ color: 0x00f3ff, wireframe: true });
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.position.set(x, y, z);
+            scene.add(mesh);
+            checkpoints.push({ mesh, pos: new THREE.Vector3(x, y + 0.1, z), active: false });
+        }
+
+        // --- ANIMATION HELPER ---
+        function setAction(name) {
+            if (!mixer) return;
+            const targetName = name.toLowerCase();
+            let actionToPlay = animationsMap.get(targetName);
+
+            // Dynamic search for jump, run, sprint, idle and posture in GLTF clip catalog
+            if (!actionToPlay) {
+                if (targetName === 'run') {
+                    actionToPlay = animationsMap.get('run') || animationsMap.get('sprint') || animationsMap.get('walk');
+                } else if (targetName === 'jump') {
+                    actionToPlay = animationsMap.get('jump') || animationsMap.get('air');
+                } else if (targetName === 'idle') {
+                    actionToPlay = animationsMap.get('idle') || animationsMap.get('stand') || animationsMap.get('pose') || animationsMap.get('tpose');
+                }
+            }
+
+            if (currentAction !== name) {
+                if (currentAction && animationsMap.get(currentAction.toLowerCase())) {
+                    animationsMap.get(currentAction.toLowerCase()).fadeOut(0.12);
+                }
+
+                if (actionToPlay) {
+                    actionToPlay.reset().setEffectiveTimeScale(name === 'jump' ? 1.4 : 1.0).fadeIn(0.12).play();
+                } else if (targetName === 'idle') {
+                    // Se o modelo não possui um clipe de Idle explícito, interrompe a corrida e mantém o modelo parado em pose neutra
+                    mixer.stopAllAction();
+                }
+                currentAction = name;
+            }
+        }
+
+        // --- CONTROLS & CAMERA STATE ---
+        const keys = {};
+        let cameraYaw = 0;
+        let cameraPitch = -0.2;
+        let isPointerLocked = false;
+
+        let playerVelocity = new THREE.Vector3();
+        let isGrounded = false;
+        let jumpCount = 0;
+        let isWallRunning = false;
+        let stamina = 100;
+
+        const levelValText = document.getElementById('level-val');
+        const scoreValText = document.getElementById('score-val');
+        const timerValText = document.getElementById('timer-val');
+        const gemsValText = document.getElementById('gems-val');
+        const speedValText = document.getElementById('speed-val');
+        const staminaBar = document.getElementById('stamina-bar');
+
+        function setupEventListeners() {
+            window.addEventListener('resize', onWindowResize);
+
+            document.addEventListener('keydown', (e) => {
+                keys[e.code] = true;
+                if (e.code === 'Space') handleJump();
+                if (e.code === 'KeyE') handleWeb();
+            });
+
+            document.addEventListener('keyup', (e) => {
+                keys[e.code] = false;
+            });
+
+            // Pointer Lock 360 View
+            const container = document.getElementById('canvas-container');
+            container.addEventListener('click', () => {
+                if (isPlaying && !isPaused) {
+                    container.requestPointerLock();
+                }
+            });
+
+            document.addEventListener('mousemove', (e) => {
+                if (document.pointerLockElement === container || isPointerLocked) {
+                    cameraYaw -= e.movementX * sensitivity;
+                    cameraPitch -= e.movementY * sensitivity;
+                    cameraPitch = Math.max(-Math.PI / 2.5, Math.min(Math.PI / 3, cameraPitch));
+                }
+            });
+
+            // Start Button
+            document.getElementById('start-btn').addEventListener('click', startGame);
+
+            // Difficulty & Level Selector UI Events
+            document.getElementById('diff-select').addEventListener('change', (e) => {
+                selectedDifficulty = e.target.value;
+            });
+
+            document.getElementById('level-input').addEventListener('change', (e) => {
+                const val = parseInt(e.target.value) || 1;
+                currentLevel = Math.max(1, Math.min(100, val));
+            });
+
+            document.getElementById('sens-slider').addEventListener('input', (e) => {
+                sensitivity = e.target.value * 0.0006;
+            });
+
+            document.getElementById('sfx-toggle').addEventListener('change', (e) => {
+                sound.enabled = e.target.checked;
+            });
+
+            // Mobile Joytouch Controls
+            setupTouchControls();
+        }
+
+        function setupTouchControls() {
+            const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+            if (isMobile) {
+                document.getElementById('touch-controls').classList.remove('hidden');
+                document.getElementById('touch-controls').classList.add('flex');
+            }
+
+            const btnJump = document.getElementById('btn-jump');
+            const btnWeb = document.getElementById('btn-web');
+
+            if (btnJump) btnJump.addEventListener('touchstart', (e) => { e.preventDefault(); handleJump(); });
+            if (btnWeb) btnWeb.addEventListener('touchstart', (e) => { e.preventDefault(); handleWeb(); });
+        }
+
+        function handleJump() {
+            if (!isPlaying || isPaused) return;
+
+            if (isGrounded || isWallRunning) {
+                playerVelocity.y = 12;
+                isGrounded = false;
+                isWallRunning = false;
+                jumpCount = 1;
+                sound.playJump();
+                setAction('jump');
+            } else if (jumpCount < 2) { // Double Jump acrobático
+                playerVelocity.y = 11;
+                jumpCount = 2;
+                sound.playJump();
+                setAction('jump');
+            }
+        }
+
+        function handleWeb() {
+            if (!isPlaying || isPaused) return;
+
+            if (isWebSwinging) {
+                // Release Web
+                isWebSwinging = false;
+                if (webLineMesh) {
+                    scene.remove(webLineMesh);
+                    webLineMesh = null;
+                }
+            } else {
+                // Shoot Web Anchor Forward
+                const raycaster = new THREE.Raycaster();
+                const viewDir = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(1, 0, 0), cameraPitch).applyAxisAngle(new THREE.Vector3(0, 1, 0), cameraYaw);
+                raycaster.set(playerMesh.position, viewDir);
+
+                const intersects = raycaster.intersectObjects(platforms);
+                if (intersects.length > 0 && intersects[0].distance < 30) {
+                    webAnchor = intersects[0].point;
+                    isWebSwinging = true;
+                    sound.playWeb();
+
+                    // Line Visualization
+                    const lineMat = new THREE.LineBasicMaterial({ color: 0x00f3ff, linewidth: 3 });
+                    const lineGeo = new THREE.BufferGeometry().setFromPoints([playerMesh.position, webAnchor]);
+                    webLineMesh = new THREE.Line(lineGeo, lineMat);
+                    scene.add(webLineMesh);
+                }
+            }
+        }
+
+        function startGame() {
+            sound.init();
+            const inputLvl = parseInt(document.getElementById('level-input').value) || 1;
+            buildLevel(inputLvl);
+
+            document.getElementById('modal-screen').classList.add('hidden');
+            isPlaying = true;
+            isPaused = false;
+            elapsedTime = 0;
+            score = 0;
+
+            const container = document.getElementById('canvas-container');
+            container.requestPointerLock();
+        }
+
+        function respawnPlayer() {
+            playerMesh.position.copy(lastCheckpointPos);
+            playerVelocity.set(0, 0, 0);
+            sound.playFall();
+        }
+
+        function completeLevel() {
+            sound.playWin();
+            if (currentLevel < 100) {
+                currentLevel++;
+                buildLevel(currentLevel);
+                showMessage(`NÍVEL ${currentLevel} ALCANÇADO!`);
+            } else {
+                document.getElementById('modal-title').innerText = 'VOCÊ VENCEU O JOGO!';
+                document.getElementById('modal-desc').innerText = 'Parabéns! Você completou os 100 níveis do Cyberparkour!';
+                document.getElementById('modal-screen').classList.remove('hidden');
+                isPlaying = false;
+            }
+        }
+
+        function showMessage(msg) {
+            const banner = document.getElementById('message-banner');
+            const text = document.getElementById('message-text');
+            text.innerText = msg;
+            banner.classList.remove('opacity-0');
+            setTimeout(() => banner.classList.add('opacity-0'), 2000);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // --- UPDATE MINIMAP ---
+        function updateMinimap() {
+            const canvas = document.getElementById('minimap');
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            const centerX = canvas.width / 2;
+            const centerY = canvas.height / 2;
+
+            // Player Marker
+            ctx.fillStyle = '#00f3ff';
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, 4, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Gem Markers
+            ctx.fillStyle = '#ff007f';
+            gems.forEach(g => {
+                const dx = (g.position.x - playerMesh.position.x) * 1.5;
+                const dz = (g.position.z - playerMesh.position.z) * 1.5;
+                if (Math.abs(dx) < 45 && Math.abs(dz) < 45) {
+                    ctx.beginPath();
+                    ctx.arc(centerX + dx, centerY + dz, 2, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            });
+        }
+
+        // --- MAIN GAME LOOP ---
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const delta = Math.min(clock.getDelta(), 0.1);
+
+            if (mixer) mixer.update(delta);
+
+            if (isPlaying && !isPaused) {
+                elapsedTime += delta;
+                const mins = Math.floor(elapsedTime / 60).toString().padStart(2, '0');
+                const secs = Math.floor(elapsedTime % 60).toString().padStart(2, '0');
+                const ms = Math.floor((elapsedTime % 1) * 10).toString();
+                timerValText.innerText = `${mins}:${secs}.${ms}`;
+
+                // Update Moving Platforms
+                movingPlatforms.forEach(mp => {
+                    const t = clock.getElapsedTime() * mp.speed + mp.timeOffset;
+                    const offset = Math.sin(t) * mp.distance;
+                    if (mp.axis === 'x') mp.mesh.position.x = mp.startPos.x + offset;
+                    else mp.mesh.position.y = mp.startPos.y + offset;
+                });
+
+                // Input Direction
+                const moveDir = new THREE.Vector3();
+                if (keys['KeyW'] || keys['ArrowUp']) moveDir.z -= 1;
+                if (keys['KeyS'] || keys['ArrowDown']) moveDir.z += 1;
+                if (keys['KeyA'] || keys['ArrowLeft']) moveDir.x -= 1;
+                if (keys['KeyD'] || keys['ArrowRight']) moveDir.x += 1;
+                moveDir.normalize();
+
+                // Apply Camera Orientation to Movement
+                const cameraRotation = new THREE.Euler(0, cameraYaw, 0, 'YXZ');
+                moveDir.applyEuler(cameraRotation);
+
+                // Speed calculation
+                let speed = keys['ShiftLeft'] || keys['ShiftRight'] ? 12 : 7;
+                if (moveDir.length() > 0) {
+                    playerVelocity.x = moveDir.x * speed;
+                    playerVelocity.z = moveDir.z * speed;
+
+                    // Turn Model to Motion Direction (Facing Forward Corrected: + Math.PI)
+                    const targetAngle = Math.atan2(moveDir.x, moveDir.z) + Math.PI;
+                    playerMesh.rotation.y = targetAngle;
+
+                    if (isGrounded) {
+                        setAction(speed > 8 ? 'run' : 'walk');
+                        playerMesh.rotation.x = 0; // Reset jump lean on ground
+                    }
+                } else {
+                    // Parar imediatamente ao soltar os controles de movimento
+                    playerVelocity.x = 0;
+                    playerVelocity.z = 0;
+                    if (isGrounded) {
+                        setAction('idle');
+                        playerMesh.rotation.x = 0;
+                    }
+                }
+
+                // Quando estiver no ar (pulando), cancela a animação de corrida e ativa a pose de salto
+                if (!isGrounded && !isWallRunning) {
+                    setAction('jump');
+                    if (jumpCount === 2) {
+                        // Giro acrobático no salto duplo
+                        playerMesh.rotation.x -= 12 * delta;
+                    } else {
+                        // Inclinação dinâmica de salto para a frente
+                        playerMesh.rotation.x = -0.25;
+                    }
+                }
+
+                // Web Swinging Mechanical Pull
+                if (isWebSwinging && webAnchor) {
+                    const swingDir = new THREE.Vector3().subVectors(webAnchor, playerMesh.position).normalize();
+                    playerVelocity.add(swingDir.multiplyScalar(25 * delta));
+
+                    if (webLineMesh) {
+                        const lineGeo = new THREE.BufferGeometry().setFromPoints([playerMesh.position, webAnchor]);
+                        webLineMesh.geometry.dispose();
+                        webLineMesh.geometry = lineGeo;
+                    }
+                }
+
+                // Gravity
+                playerVelocity.y -= 28 * delta;
+
+                // Move Player Body
+                playerMesh.position.x += playerVelocity.x * delta;
+                playerMesh.position.y += playerVelocity.y * delta;
+                playerMesh.position.z += playerVelocity.z * delta;
+
+                // Platform Collisions (Adjusted bounding box & snapping height so feet rest on surface)
+                isGrounded = false;
+                const playerBox = new THREE.Box3().setFromCenterAndSize(
+                    new THREE.Vector3(playerMesh.position.x, playerMesh.position.y + 0.9, playerMesh.position.z),
+                    new THREE.Vector3(0.8, 1.8, 0.8)
+                );
+
+                platforms.forEach(plat => {
+                    const platBox = new THREE.Box3().setFromObject(plat);
+                    // Check if player is falling onto the top surface of a platform
+                    if (playerVelocity.y <= 0) {
+                        const topSurface = platBox.max.y;
+                        if (
+                            playerMesh.position.y >= topSurface - 0.4 &&
+                            playerMesh.position.y <= topSurface + 0.5 &&
+                            playerMesh.position.x >= platBox.min.x - 0.3 &&
+                            playerMesh.position.x <= platBox.max.x + 0.3 &&
+                            playerMesh.position.z >= platBox.min.z - 0.3 &&
+                            playerMesh.position.z <= platBox.max.z + 0.3
+                        ) {
+                            playerMesh.position.y = topSurface;
+                            playerVelocity.y = 0;
+                            isGrounded = true;
+                            jumpCount = 0;
+                        }
+                    }
+                });
+
+                // Gem Collection
+                gems.forEach((gem, idx) => {
+                    if (gem.position.distanceTo(playerMesh.position) < 1.5) {
+                        scene.remove(gem);
+                        gems.splice(idx, 1);
+                        gemsCollected++;
+                        score += 150;
+                        sound.playGem();
+                        scoreValText.innerText = score;
+                        gemsValText.innerText = `${gemsCollected} / ${totalGemsInLevel}`;
+                    }
+                });
+
+                // Checkpoints Detection
+                checkpoints.forEach(cp => {
+                    if (!cp.active && cp.pos.distanceTo(playerMesh.position) < 2) {
+                        cp.active = true;
+                        lastCheckpointPos.copy(cp.pos);
+                        cp.mesh.material.color.setHex(0x00ff00);
+                        sound.playCheckpoint();
+                        showMessage('CHECKPOINT SALVO!');
+                    }
+                });
+
+                // Speed Pads Check
+                speedPads.forEach(sp => {
+                    if (sp.position.distanceTo(playerMesh.position) < 2) {
+                        playerVelocity.z -= 25;
+                        sound.playBoost();
+                    }
+                });
+
+                // End Portal Reach
+                if (portalMesh && portalMesh.position.distanceTo(playerMesh.position) < 3) {
+                    completeLevel();
+                }
+
+                // Fall Out Respawn
+                if (playerMesh.position.y < -20) {
+                    respawnPlayer();
+                }
+
+                // HUD Stats Update
+                const speedKmh = Math.floor(new THREE.Vector2(playerVelocity.x, playerVelocity.z).length() * 3.6);
+                speedValText.innerText = `${speedKmh} KM/H`;
+
+                // 360 Camera Follow Position
+                const camOffset = new THREE.Vector3(0, 2.5, 6.0);
+                camOffset.applyAxisAngle(new THREE.Vector3(1, 0, 0), cameraPitch);
+                camOffset.applyAxisAngle(new THREE.Vector3(0, 1, 0), cameraYaw);
+
+                camera.position.copy(playerMesh.position).add(camOffset);
+                camera.lookAt(playerMesh.position.clone().add(new THREE.Vector3(0, 1.2, 0)));
+
+                updateMinimap();
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        // Initialize Engine on Page Load
+        window.onload = initEngine;
+    </script>
+</body>
+</html>
